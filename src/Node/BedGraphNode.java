@@ -60,6 +60,6 @@ public class BedGraphNode extends Node.TagNode{
 	public void setScore(int s){_score = s;}
 	public double getScore2(){return _score2;}
 	public void setScore2(double s){_score2 = s;}
-	public double getScore3(){return _score3;}
+	public String getScore3(){return String.valueOf(_score3);}
 	public void setScore3(double score){_score3 = score;}
 }

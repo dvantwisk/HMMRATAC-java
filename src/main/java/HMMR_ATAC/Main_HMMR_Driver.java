@@ -100,8 +100,11 @@ public class Main_HMMR_Driver {
 	
 	@SuppressWarnings("unchecked")
 	public static void main(String[] args) throws IOException {
-		
 		ArgParser p = new ArgParser(args,versionNum);
+		performHMMRATAC(p, args);
+	}
+		
+	public static void performHMMRATAC(ArgParser p, String[] args) throws IOException {
 		bam = p.getBam();
 		index = p.getIndex();
 		genomeFile=p.getGenome();

@@ -14,10 +14,12 @@ jobs:
       uses: actions/setup-java@v1
       with:
         java-version: 1.8
-    - name: Run command line test
-      run: java -jar ../build/libs/HMMRATAC-snapshot-exec.jar -b 65283_treat_rep1.chr22.bam -i 65283_treat_rep1.chr22.bam.bai -g hg19.chr22.genome -o Test2 --model 65283_chr22.model
+    - name: Build with Gradle
+      run: ./gradlew execJar
     - name: Upload artifact
       uses: actions/upload-artifact@v1
       with:
         name: HMMRATAC-snapshot-exec.jar
         path: build/libs
+    - name: Run command line test
+      run: java -jar ../build/libs/HMMRATAC-snapshot-exec.jar -b 65283_treat_rep1.chr22.bam -i 65283_treat_rep1.chr22.bam.bai -g hg19.chr22.genome -o Test2 --model 65283_chr22.model

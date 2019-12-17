@@ -73,6 +73,7 @@ public class TrackHolder {
 	 */
 	public Dataset getDataSet(){
 		Dataset data = new DefaultDataset();
+		System.out.println("Tracksize is " + tracks.size());
 		for (int i = 0;i < tracks.size();i++){
 			DenseInstance ins = new DenseInstance(tracks.get(i));
 			//for (int a = 0;a < tracks.get(i).length;a++){

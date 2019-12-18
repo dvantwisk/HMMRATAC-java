@@ -121,19 +121,27 @@ public class KMeansToHMM {
 			
 			System.out.println("Inner Checkpoint 1 " + a + " - Cluster Size " + cluster.size());
 			for (int x = 0;x < cluster.size();x++){
+				try {
 				Instance ins = cluster.get(x);
 				assignments[ins.getID()] = a;
 				Iterator<Double> iter = ins.values().iterator();
 				double[] values = new double[numFeatures];
 				int counter = 0;
 				while(iter.hasNext()){
+					try {
 					double value = iter.next();
 					values[counter] = value;
 					means[counter] += value;
 					var[counter][x] = value;
 					counter++;
+					} catch (Exception e) {
+						System.out.println("Error inside inner loop x " + x + " counter " + counter);
+					}
 				}
 				cov.increment(values);
+				} catch (Exception e) {
+					System.out.println("Error in loop: x " + x);
+				}
 				
 			}
 			

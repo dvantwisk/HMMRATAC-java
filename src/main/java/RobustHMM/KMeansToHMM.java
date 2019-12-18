@@ -118,6 +118,8 @@ public class KMeansToHMM {
 			double[] means = new double[numFeatures];
 			StorelessCovariance cov = new StorelessCovariance(numFeatures);
 			double[][] var = new double[numFeatures][cluster.size()];
+			
+			System.out.println("Inner Checkpoint 1 " + a + " - Cluster Size " + cluster.size());
 			for (int x = 0;x < cluster.size();x++){
 				Instance ins = cluster.get(x);
 				assignments[ins.getID()] = a;
@@ -134,9 +136,15 @@ public class KMeansToHMM {
 				cov.increment(values);
 				
 			}
+			
+			System.out.println("Inner Checkpoint 2 " + means.length);
+
 			for (int y = 0;y < means.length;y++){
 				means[y] /= (double) cluster.size();
 			}
+			
+			System.out.println("Inner Checkpoint 3 " + a);
+
 			double[][] covMat = null;
 			if (diag == false){
 				covMat = cov.getData();
@@ -148,6 +156,10 @@ public class KMeansToHMM {
 					covMat[z][z] = variance.evaluate(var[z]);
 				}
 			}
+			
+			System.out.println("Inner Checkpoint 4 " + a);
+
+			
 			OpdfMultiGaussian pdf = new OpdfMultiGaussian(means, covMat);
 			opdf.add(pdf);
 		}

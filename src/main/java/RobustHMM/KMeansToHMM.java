@@ -96,11 +96,15 @@ public class KMeansToHMM {
 	private void build(Dataset data,int K,int numIter,boolean diag,boolean equal,boolean equal2){
 		int numFeatures = data.noAttributes();
 		
+		System.out.println("Checkpoint 1");
+		
 		KMeans k = new KMeans(K,numIter);//changed to Kmeans (modified version with uniform centroids)
 		//k.setUniformInitialCentroids();//added this line when changed to modified version
 		Dataset[] clustered = k.cluster(data);
 		int[] assignments = new int[data.size()];
 		List<OpdfMultiGaussian> opdf = new ArrayList<OpdfMultiGaussian>();
+
+		System.out.println("Checkpoint 2");
 		
 		for (int a = 0; a < clustered.length;a++){
 			Dataset cluster = clustered[a];
@@ -141,6 +145,8 @@ public class KMeansToHMM {
 			opdf.add(pdf);
 		}
 		
+		System.out.println("Checkpoint 3");
+		
 		double[][] trans = new double[K][K];
 		if (!equal2){
 			for (int a = 0;a < assignments.length-1;a++){
@@ -165,12 +171,17 @@ public class KMeansToHMM {
 			}
 		}
 		
+		System.out.println("Checkpoint 4");
+		
 		double[] initial = new double[K];
 		if (equal == true){
 			for (int i = 0; i < K;i++){
 				initial[i] = 1/(double)K;
 			}
 		}
+		
+		System.out.println("Checkpoint 5");
+		
 		hmm = new Hmm<ObservationVector>(initial,trans,opdf);
 	}
 	

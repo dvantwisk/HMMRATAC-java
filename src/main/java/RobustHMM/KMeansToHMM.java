@@ -96,7 +96,13 @@ public class KMeansToHMM {
 	private void build(Dataset data,int K,int numIter,boolean diag,boolean equal,boolean equal2){
 		int numFeatures = data.noAttributes();
 		
-		System.out.println("Checkpoint 1");
+		System.out.println("Checkpoint 1 numFeatures " + numFeatures);
+		System.out.println("Checkpoint 1 data size " + data.size());
+		System.out.println("Checkpoint 1 K " + K);
+		System.out.println("Checkpoint 1 numIter " + numIter);
+		System.out.println("Checkpoint 1 diag " + diag);
+		System.out.println("Checkpoint 1 equal " + equal);
+		System.out.println("Checkpoint 1 equal2 " + equal2);
 		
 		KMeans k = new KMeans(K,numIter);//changed to Kmeans (modified version with uniform centroids)
 		//k.setUniformInitialCentroids();//added this line when changed to modified version
@@ -105,6 +111,7 @@ public class KMeansToHMM {
 		List<OpdfMultiGaussian> opdf = new ArrayList<OpdfMultiGaussian>();
 
 		System.out.println("Checkpoint 2");
+		System.out.println("Checkpoint 2 clustered length " + clustered.length);
 		
 		for (int a = 0; a < clustered.length;a++){
 			Dataset cluster = clustered[a];

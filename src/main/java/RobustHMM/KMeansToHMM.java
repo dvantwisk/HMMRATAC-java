@@ -19,6 +19,8 @@ import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 
+import java.io.PrintStream;
+
 import org.apache.commons.math3.stat.correlation.StorelessCovariance;
 import org.apache.commons.math3.stat.descriptive.moment.Variance;
 
@@ -42,8 +44,8 @@ public class KMeansToHMM {
 	 * @param equal2 a boolean to determine whether the transition probability matrix should be equal
 	 */
 	@SuppressWarnings("unchecked")
-	public KMeansToHMM(Dataset d,int K,int numIter,boolean diag,boolean equal,boolean equal2){
-		build(d,K,numIter, diag, equal,equal2);
+	public KMeansToHMM(Dataset d,int K,int numIter,boolean diag,boolean equal,boolean equal2, PrintStream log){
+		build(d,K,numIter, diag, equal,equal2, log);
 		sort((Hmm<ObservationVector>) hmm);
 		
 	}
@@ -93,7 +95,7 @@ public class KMeansToHMM {
 	 * @param equal a boolean to determine whether the initial probability vector should be equal
 	 * @param equal2 a boolean to determine whether the transition probability matrix should be equal
 	 */
-	private void build(Dataset data,int K,int numIter,boolean diag,boolean equal,boolean equal2){
+	private void build(Dataset data,int K,int numIter,boolean diag,boolean equal,boolean equal2, PrintStream log){
 		int numFeatures = data.noAttributes();
 		
 		System.out.println("Checkpoint 1 numFeatures " + numFeatures);
@@ -121,43 +123,20 @@ public class KMeansToHMM {
 			
 			System.out.println("Inner Checkpoint 1 " + a + " - Cluster Size " + cluster.size());
 			for (int x = 0;x < cluster.size();x++){
-				try {
 				Instance ins = cluster.get(x);
-				try {
 				assignments[ins.getID()] = a;
-				try {
+				log.println("Error Check a " + a + " - x " + x + " - ins getID " + ins.getID() + " cluster size " + cluster.size());
 				Iterator<Double> iter = ins.values().iterator();
-				try {
 				double[] values = new double[numFeatures];
 				int counter = 0;
 				while(iter.hasNext()){
-					try {
 					double value = iter.next();
 					values[counter] = value;
 					means[counter] += value;
 					var[counter][x] = value;
 					counter++;
-					} catch (Exception e) {
-						System.out.println("Error inside inner loop x " + x + " counter " + counter);
-					}
 				}
-				try {
 				cov.increment(values);
-				} catch (Exception e) {
-					System.out.println("Error 5 in loop: x " + x);
-				}
-				} catch (Exception e) {
-					System.out.println("Error 4 in loop: x " + x);
-				}
-				} catch (Exception e) {
-					System.out.println("Error 3 in loop: x " + x);
-				}
-				} catch (Exception e) {
-					System.out.println("Error 2 in loop: x " + x + "ins ID" + ins.getID());
-				}
-				} catch (Exception e) {
-					System.out.println("Error 1 in loop: x " + x);
-				}
 				
 			}
 			

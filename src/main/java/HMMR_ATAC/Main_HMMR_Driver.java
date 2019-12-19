@@ -390,7 +390,7 @@ public class Main_HMMR_Driver {
 			System.out.println("assigning kmeans model");
 			log.println("Assigning Kmeans model");
 			
-			KMeansToHMM kmeans = new KMeansToHMM(holder.getDataSet(),k,Integer.MAX_VALUE,true,true,true);
+			KMeansToHMM kmeans = new KMeansToHMM(holder.getDataSet(),k,Integer.MAX_VALUE,true,true,true, log);
 			System.out.println("Finished assigning kmeans model");
 
 			log.println("Kmeans Model:\n"+kmeans.getHMM().toString()); // added 7-13-18

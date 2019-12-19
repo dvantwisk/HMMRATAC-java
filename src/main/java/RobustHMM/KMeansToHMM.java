@@ -124,8 +124,8 @@ public class KMeansToHMM {
 			System.out.println("Inner Checkpoint 1 " + a + " - Cluster Size " + cluster.size());
 			for (int x = 0;x < cluster.size();x++){
 				Instance ins = cluster.get(x);
-				assignments[ins.getID()] = a;
 				log.println("Error Check a " + a + " - x " + x + " - ins getID " + ins.getID() + " cluster size " + cluster.size());
+				assignments[ins.getID()] = a;
 				Iterator<Double> iter = ins.values().iterator();
 				double[] values = new double[numFeatures];
 				int counter = 0;

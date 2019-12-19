@@ -123,8 +123,11 @@ public class KMeansToHMM {
 			for (int x = 0;x < cluster.size();x++){
 				try {
 				Instance ins = cluster.get(x);
+				try {
 				assignments[ins.getID()] = a;
+				try {
 				Iterator<Double> iter = ins.values().iterator();
+				try {
 				double[] values = new double[numFeatures];
 				int counter = 0;
 				while(iter.hasNext()){
@@ -138,9 +141,22 @@ public class KMeansToHMM {
 						System.out.println("Error inside inner loop x " + x + " counter " + counter);
 					}
 				}
+				try {
 				cov.increment(values);
 				} catch (Exception e) {
-					System.out.println("Error in loop: x " + x);
+					System.out.println("Error 5 in loop: x " + x);
+				}
+				} catch (Exception e) {
+					System.out.println("Error 4 in loop: x " + x);
+				}
+				} catch (Exception e) {
+					System.out.println("Error 3 in loop: x " + x);
+				}
+				} catch (Exception e) {
+					System.out.println("Error 2 in loop: x " + x + "ins ID" + ins.getID());
+				}
+				} catch (Exception e) {
+					System.out.println("Error 1 in loop: x " + x);
 				}
 				
 			}

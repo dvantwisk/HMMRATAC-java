@@ -115,6 +115,8 @@ public class KMeansToHMM {
 		System.out.println("Checkpoint 2");
 		System.out.println("Checkpoint 2 clustered length " + clustered.length);
 		
+		int offset = 0;
+		
 		for (int a = 0; a < clustered.length;a++){
 			Dataset cluster = clustered[a];
 			double[] means = new double[numFeatures];
@@ -125,7 +127,10 @@ public class KMeansToHMM {
 			for (int x = 0;x < cluster.size();x++){
 				Instance ins = cluster.get(x);
 				log.println("Error Check a " + a + " - x " + x + " - ins getID " + ins.getID() + " cluster size " + cluster.size());
-				assignments[ins.getID()] = a;
+				if (x == 0 && a == 0) {
+					offset = ins.getID();
+				}
+				assignments[ins.getID() - offset] = a;
 				Iterator<Double> iter = ins.values().iterator();
 				double[] values = new double[numFeatures];
 				int counter = 0;

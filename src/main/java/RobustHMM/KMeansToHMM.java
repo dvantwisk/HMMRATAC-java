@@ -98,24 +98,11 @@ public class KMeansToHMM {
 	private void build(Dataset data,int K,int numIter,boolean diag,boolean equal,boolean equal2, PrintStream log){
 		int numFeatures = data.noAttributes();
 		
-		System.out.println("Checkpoint 1 numFeatures " + numFeatures);
-		System.out.println("Checkpoint 1 data size " + data.size());
-		System.out.println("Checkpoint 1 K " + K);
-		System.out.println("Checkpoint 1 numIter " + numIter);
-		System.out.println("Checkpoint 1 diag " + diag);
-		System.out.println("Checkpoint 1 equal " + equal);
-		System.out.println("Checkpoint 1 equal2 " + equal2);
-		
 		KMeans k = new KMeans(K,numIter);//changed to Kmeans (modified version with uniform centroids)
 		//k.setUniformInitialCentroids();//added this line when changed to modified version
 		Dataset[] clustered = k.cluster(data);
 		int[] assignments = new int[data.size()];
 		List<OpdfMultiGaussian> opdf = new ArrayList<OpdfMultiGaussian>();
-
-		System.out.println("Checkpoint 2");
-		System.out.println("Checkpoint 2 clustered length " + clustered.length);
-		
-		int offset = 0;
 		
 		for (int a = 0; a < clustered.length;a++){
 			Dataset cluster = clustered[a];
@@ -123,15 +110,10 @@ public class KMeansToHMM {
 			StorelessCovariance cov = new StorelessCovariance(numFeatures);
 			double[][] var = new double[numFeatures][cluster.size()];
 			
-			System.out.println("Inner Checkpoint 1 " + a + " - Cluster Size " + cluster.size());
 			for (int x = 0;x < cluster.size();x++){
 				Instance ins = cluster.get(x);
-				if (x == 0 && a == 0) {
-					offset = ins.getID();
-				}
-				log.println("Error Check a " + a + " - x " + x + " - ins getID " + (ins.getID() + offset) + " cluster size " + cluster.size());
 
-				assignments[ins.getID() - offset] = a;
+				assignments[ins.getID()] = a;
 				Iterator<Double> iter = ins.values().iterator();
 				double[] values = new double[numFeatures];
 				int counter = 0;
@@ -146,14 +128,10 @@ public class KMeansToHMM {
 				
 			}
 			
-			System.out.println("Inner Checkpoint 2 " + means.length);
-
 			for (int y = 0;y < means.length;y++){
 				means[y] /= (double) cluster.size();
 			}
 			
-			System.out.println("Inner Checkpoint 3 " + a);
-
 			double[][] covMat = null;
 			if (diag == false){
 				covMat = cov.getData();
@@ -166,15 +144,10 @@ public class KMeansToHMM {
 				}
 			}
 			
-			System.out.println("Inner Checkpoint 4 " + a);
-
-			
 			OpdfMultiGaussian pdf = new OpdfMultiGaussian(means, covMat);
 			opdf.add(pdf);
 		}
-		
-		System.out.println("Checkpoint 3");
-		
+				
 		double[][] trans = new double[K][K];
 		if (!equal2){
 			for (int a = 0;a < assignments.length-1;a++){
@@ -198,18 +171,14 @@ public class KMeansToHMM {
 				}
 			}
 		}
-		
-		System.out.println("Checkpoint 4");
-		
+				
 		double[] initial = new double[K];
 		if (equal == true){
 			for (int i = 0; i < K;i++){
 				initial[i] = 1/(double)K;
 			}
 		}
-		
-		System.out.println("Checkpoint 5");
-		
+				
 		hmm = new Hmm<ObservationVector>(initial,trans,opdf);
 	}
 	

@@ -394,474 +394,470 @@ public class Main_HMMR_Driver {
 			System.out.println("Finished assigning kmeans model");
 
 			log.println("Kmeans Model:\n"+kmeans.getHMM().toString()); // added 7-13-18
-			//System.out.println(kmeans.getHMM().toString());
+			//System.out.println(kmeans.getHMM().toString());		
+			
+			hmm = new BaumWelch(kmeans.getHMM(),holder.getBWObs(),1000).build();
+		
+			//System.out.println(hmm.toString());
+			kmeans = null; holder=null;
+		
 		}
-	}
-}
+		/*
+		 * Use input model if available
+		 */
+		
+		if (modelFile != null){
+			hmm = (Hmm<ObservationVector>) HmmBinaryReader.read(new FileInputStream(modelFile));
+		}
+
+		
+		/*
+		 * Identify peak state as the state with the highest short read signal.
+		 * Identify flanking nucleosome state as the state with the second highest mono read signal.
+		 */
+		
+		int peak = -1;
+		double max = 0.0;
+		for (int i = 0; i < hmm.nbStates();i++){
+			OpdfMultiGaussian pdf = (OpdfMultiGaussian) hmm.getOpdf(i);
+			double sh = pdf.mean()[0];
+			if (sh > max){
+				peak = i;
+				max = sh;
+			}
+		}
+		max = 0.0;
+		for (int i = 0; i < hmm.nbStates();i++){
+			if (i != peak){
+				OpdfMultiGaussian pdf = (OpdfMultiGaussian) hmm.getOpdf(i);
+				double mono = pdf.mean()[1];
+				if (mono > max){
+					max = mono;
+				}
+			}
+		}
+		
+		
+		
+		/*
+		 * Output binary model file
+		 */
+		File outputModel = new File(output+".model");
+		FileOutputStream outModel = new FileOutputStream(outputModel);
+		HmmBinaryWriter.write(outModel, hmm);
+		outModel.close();
+		log.println("Model created and refined. See "+output+".model");
+		log.println("Model:\n"+hmm.toString());
+		
+		/*
+		 * Stop program if only model is desired
+		 */
+		
+		if(stopAfterModel){
+			System.exit(0);
+		}
+		
+		/*
+		 * Split the genome file into smaller 25MB chunks 
+		 * Can also split into whatever sized chunks the users prefers
+		 * May be necessary to split into smaller chunks for machines with less memory
+		 */
+		
+		ArrayList<TagNode> split = new SplitBed(genomeStats,vitWindow).getResult();
+		genomeStats = null;
+		
+		
+		
+		/*
+		 * Subtract excluded regions from the split genome for Viterbi
+		 */
+		
+		ArrayList<TagNode> vitBed = new SubtractBed(split,exclude).getResults();
+		split=null;exclude=null;
+		
+		log.println("Genome split and subtracted masked regions");
+		
+		/*
+		 * Run viterbi on the whole genome
+		 */
+		//PrintStream out = new PrintStream(output+".pileup");
+		PrintStream NFR = null;
+		PrintStream MONO = null;
+		PrintStream DI=null;
+		PrintStream TRI=null;
+		if(printHMMRTracks){
+			 NFR = new PrintStream(output+"_nfr.bedgraph");
+			 MONO = new PrintStream(output+"_mono.bedgraph");
+			 DI = new PrintStream(output+"_di.bedgraph");
+			 TRI = new PrintStream(output+"_tri.bedgraph");
+		}
+		ArrayList<TagNode> genomeAnnotation = new ArrayList<TagNode>();
+		for (int i = 0;i < vitBed.size();i++){
+			if (vitBed.get(i).getLength() >= 10){
+				ArrayList<TagNode> tempBed = new ArrayList<TagNode>();
+				tempBed.add(vitBed.get(i));
+				FragPileupGen vGen = new FragPileupGen(bam, index, tempBed, mode, fragMeans, fragStddevs,minMapQ,rmDup,cpmScale);
+				TrackHolder vHolder = new TrackHolder(vGen.transformTracks(vGen.scaleTracks(vGen.getAverageTracks())),trim);// 8/30/16 transformed tracks
+				
+				if (printHMMRTracks){
+					HMMRTracksToBedgraph tracks = new HMMRTracksToBedgraph(vHolder.getRawData(),vitBed.get(i),10);
+					ArrayList<TagNode> nfr = tracks.getShort();
+					ArrayList<TagNode> mono = tracks.getMono();
+					ArrayList<TagNode> di = tracks.getDi();
+					ArrayList<TagNode> tri = tracks.getTri();
+					
+					
+					if (nfr != null) {
+						for (int w = 0; w < nfr.size(); w++) {
+							NFR.println(nfr.get(w).toString2());
+						}
+					}
+					if (mono != null) {
+						for (int d = 0; d < mono.size(); d++) {
+							MONO.println(mono.get(d).toString2());
+						}
+					}
+					if (di != null) {
+						for (int e = 0; e < di.size(); e++) {
+							DI.println(di.get(e).toString2());
+						}
+					}
+					if (tri != null) {
+						for (int f = 0; f < tri.size(); f++) {
+							TRI.println(tri.get(f).toString2());
+						}
+					}
+					
+				}
+				vGen = null;
 			
+				RobustHMM HMM = new RobustHMM(vHolder.getObs(),null,hmm,false,0,"Vector",0);
+				int[] states = HMM.getStates();
+				//Reverse the states for creating peaks
+				//ArrayUtils.reverse(states);
+				
+				int start = vitBed.get(i).getStart();
+				int remainder = vitBed.get(i).getLength() % 10;
+				ArrayList<PileupNode2> pile = new ArrayList<PileupNode2>();
+				int a;
+				for (a = 0;a < states.length-1;a++){
+					//PileupNode2 pNode = new PileupNode2(start+(a*10),(double)states[a],vitBed.get(i).getChrom());
+					PileupNode2 pNode = new PileupNode2(start+(a*10),(double)states[a],vitBed.get(i).getChrom());
+					pile.add(pNode);
+					
+					
+					//out.println(pNode.getChrom()+"\t"+pNode.getBase()+"\t"+(pNode.getBase()+10)+"\t"+"E"+(int)pNode.getScore());
+				}
+				PileupNode2 pNode = new PileupNode2(start+(((a)*10)-remainder),(double)states[a],vitBed.get(i).getChrom());
+				pile.add(pNode);
+				genomeAnnotation.addAll(new PileupToBedGraph(pile,10).getBedGraph());
+				
+				if(i%50 == 0 || i == vitBed.size()-1){
+					log.println(i+" round viterbi done");
+				}
+			}
+		}
+		//out.close();
+		if(printHMMRTracks){
+			NFR.close();MONO.close();DI.close();TRI.close();
+		}
+		/**
+		 * Report the final results as peaks, bedgraphs and summits, if desired
+		 */
+		PrintStream bedgraph=null;
+		if (bg){
+			 bedgraph = new PrintStream(output+".bedgraph");
+		}
+		PrintStream pks=null;
+		PrintStream summits=null;
+		if (peaks){
+			 pks = new PrintStream(output+"_peaks.gappedPeak");
+			 summits = new PrintStream(output+"_summits.bed");
+		}
+		HashMap<String,ArrayList<TagNode>> bdg = fc.getMappedBedgraph();
+//		HashMap<String,ArrayList<TagNode>> bdg = null;
+		
+		fc=null;
+		HashMap<String,ArrayList<TagNode>> hmmrBdg = bedGraphMath.toMap(genomeAnnotation);
+		int counter=1;
+		for (String chr : hmmrBdg.keySet()){
+			ArrayList<TagNode> hmmr = hmmrBdg.get(chr);
+			ArrayList<TagNode> signal = bdg.get(chr);
+			if (signal != null) {
+				Collections.sort(hmmr, TagNode.basepairComparator);
+				
+				Collections.sort(signal, TagNode.basepairComparator);
+				
+				int index = 0;
+				for (int i = 0; i < hmmr.size(); i++) {
+					TagNode temp = hmmr.get(i);
+
+					/**
+					 * Execute the scoring commands if the state is a peak or if bedgraph scoring is on
+					 */
+					if ((int) temp.getScore2() == peak || BGScore) {
+						boolean hasHadOverlap = false;
+						ArrayList<TagNode> overlaps = new ArrayList<TagNode>();
+						for (int a = index; a < signal.size(); a++) {
+							if (SubtractBed.overlap(temp, signal.get(a))
+									.hasHit()) {
+								overlaps.add(signal.get(a));
+								hasHadOverlap = true;
+							} else {
+								if (hasHadOverlap) {
+									index = a;
+									break;
+								}
+							}
+
+						}
+						ScoreNode scores = bedGraphMath.set(temp, overlaps);
+						double MAX = scores.getMax();
+						double MEAN = scores.getMean();
+						double MEDIAN = scores.getMedian();
+						double ZSCORE = (scores.getMean() - genomeMean)
+								/ genomeStd;
+						double FOLDCHANGE = scores.getMean() / genomeMean;
+						
+						if (scoreSys.equals("ave")) {
+							temp.setScore3(Double.toString(MEAN));
+						} else if (scoreSys.equals("fc")) {
+							temp.setScore3(Double.toString(FOLDCHANGE));
+						} else if (scoreSys.equals("zscore")) {
+							temp.setScore3(Double.toString(ZSCORE));
+						} else if (scoreSys.equals("med")) {
+							temp.setScore3(Double.toString(MEDIAN));
+						} else if (scoreSys.equals("all")){
+							String ANSWER = MAX+"_"+MEAN+"_"+MEDIAN+"_"+ZSCORE+"_"+FOLDCHANGE;
+							temp.setScore3(ANSWER);
+						} else {
+							temp.setScore3(Double.toString(MAX));
+						}
+						if ((int) temp.getScore2() == peak) {
+							temp = bedGraphMath.setSmooth(20, temp, overlaps);
+							temp.setID("Peak_" + counter);
+							if (i > 0) {
+								temp.setUpstream(hmmr.get(i - 1));
+							} else {
+								temp.setUpstream(hmmr.get(i));
+							}
+							if (i < hmmr.size() - 1) {
+								temp.setDownstream(hmmr.get(i + 1));
+							} else {
+								temp.setDownstream(hmmr.get(i));
+							}
+							counter++;
+						}
+
+					}
+					/**
+					 * report the bedgraph, is desired
+					 */
+					if (bg) {
+						if (!BGScore) {
+							bedgraph.println(temp.toString2());
+						} else {
+							bedgraph.println(temp.toString_ScoredBdg());
+						}
+					}
+					/**
+					 * report the peaks and summits, if desired
+					 */
+					if (peaks && (int) temp.getScore2() == peak
+							&& temp.getLength() >= minLength && 
+							Double.parseDouble(temp.getScore3()) >= threshold) {
+						if (temp.getSummit() != null) {
+							summits.println(temp.toString_ScoredSummit());
+						}
+						pks.println(temp.toString_gappedPeak());
+					}
+
+				}
+			}
 			
-//			hmm = new BaumWelch(kmeans.getHMM(),holder.getBWObs(),1000).build();
-//		
-//			//System.out.println(hmm.toString());
-//			kmeans = null; holder=null;
-//		
-//		}
-//		/*
-//		 * Use input model if available
-//		 */
-//		
-//		if (modelFile != null){
-//			hmm = (Hmm<ObservationVector>) HmmBinaryReader.read(new FileInputStream(modelFile));
-//		}
-//
-//		
-//		/*
-//		 * Identify peak state as the state with the highest short read signal.
-//		 * Identify flanking nucleosome state as the state with the second highest mono read signal.
-//		 */
-//		
-//		int peak = -1;
-//		double max = 0.0;
-//		for (int i = 0; i < hmm.nbStates();i++){
-//			OpdfMultiGaussian pdf = (OpdfMultiGaussian) hmm.getOpdf(i);
-//			double sh = pdf.mean()[0];
-//			if (sh > max){
-//				peak = i;
-//				max = sh;
-//			}
-//		}
-//		max = 0.0;
-//		for (int i = 0; i < hmm.nbStates();i++){
-//			if (i != peak){
-//				OpdfMultiGaussian pdf = (OpdfMultiGaussian) hmm.getOpdf(i);
-//				double mono = pdf.mean()[1];
-//				if (mono > max){
-//					max = mono;
-//				}
-//			}
-//		}
-//		
-//		
-//		
-//		/*
-//		 * Output binary model file
-//		 */
-//		File outputModel = new File(output+".model");
-//		FileOutputStream outModel = new FileOutputStream(outputModel);
-//		HmmBinaryWriter.write(outModel, hmm);
-//		outModel.close();
-//		log.println("Model created and refined. See "+output+".model");
-//		log.println("Model:\n"+hmm.toString());
-//		
-//		/*
-//		 * Stop program if only model is desired
-//		 */
-//		
-//		if(stopAfterModel){
-//			System.exit(0);
-//		}
-//		
-//		/*
-//		 * Split the genome file into smaller 25MB chunks 
-//		 * Can also split into whatever sized chunks the users prefers
-//		 * May be necessary to split into smaller chunks for machines with less memory
-//		 */
-//		
-//		ArrayList<TagNode> split = new SplitBed(genomeStats,vitWindow).getResult();
-//		genomeStats = null;
-//		
-//		
-//		
-//		/*
-//		 * Subtract excluded regions from the split genome for Viterbi
-//		 */
-//		
-//		ArrayList<TagNode> vitBed = new SubtractBed(split,exclude).getResults();
-//		split=null;exclude=null;
-//		
-//		log.println("Genome split and subtracted masked regions");
-//		
-//		/*
-//		 * Run viterbi on the whole genome
-//		 */
-//		//PrintStream out = new PrintStream(output+".pileup");
-//		PrintStream NFR = null;
-//		PrintStream MONO = null;
-//		PrintStream DI=null;
-//		PrintStream TRI=null;
-//		if(printHMMRTracks){
-//			 NFR = new PrintStream(output+"_nfr.bedgraph");
-//			 MONO = new PrintStream(output+"_mono.bedgraph");
-//			 DI = new PrintStream(output+"_di.bedgraph");
-//			 TRI = new PrintStream(output+"_tri.bedgraph");
-//		}
-//		ArrayList<TagNode> genomeAnnotation = new ArrayList<TagNode>();
-//		for (int i = 0;i < vitBed.size();i++){
-//			if (vitBed.get(i).getLength() >= 10){
-//				ArrayList<TagNode> tempBed = new ArrayList<TagNode>();
-//				tempBed.add(vitBed.get(i));
-//				FragPileupGen vGen = new FragPileupGen(bam, index, tempBed, mode, fragMeans, fragStddevs,minMapQ,rmDup,cpmScale);
-//				TrackHolder vHolder = new TrackHolder(vGen.transformTracks(vGen.scaleTracks(vGen.getAverageTracks())),trim);// 8/30/16 transformed tracks
-//				
-//				if (printHMMRTracks){
-//					HMMRTracksToBedgraph tracks = new HMMRTracksToBedgraph(vHolder.getRawData(),vitBed.get(i),10);
-//					ArrayList<TagNode> nfr = tracks.getShort();
-//					ArrayList<TagNode> mono = tracks.getMono();
-//					ArrayList<TagNode> di = tracks.getDi();
-//					ArrayList<TagNode> tri = tracks.getTri();
-//					
-//					
-//					if (nfr != null) {
-//						for (int w = 0; w < nfr.size(); w++) {
-//							NFR.println(nfr.get(w).toString2());
-//						}
-//					}
-//					if (mono != null) {
-//						for (int d = 0; d < mono.size(); d++) {
-//							MONO.println(mono.get(d).toString2());
-//						}
-//					}
-//					if (di != null) {
-//						for (int e = 0; e < di.size(); e++) {
-//							DI.println(di.get(e).toString2());
-//						}
-//					}
-//					if (tri != null) {
-//						for (int f = 0; f < tri.size(); f++) {
-//							TRI.println(tri.get(f).toString2());
-//						}
-//					}
-//					
-//				}
-//				vGen = null;
-//			
-//				RobustHMM HMM = new RobustHMM(vHolder.getObs(),null,hmm,false,0,"Vector",0);
-//				int[] states = HMM.getStates();
-//				//Reverse the states for creating peaks
-//				//ArrayUtils.reverse(states);
-//				
-//				int start = vitBed.get(i).getStart();
-//				int remainder = vitBed.get(i).getLength() % 10;
-//				ArrayList<PileupNode2> pile = new ArrayList<PileupNode2>();
-//				int a;
-//				for (a = 0;a < states.length-1;a++){
-//					//PileupNode2 pNode = new PileupNode2(start+(a*10),(double)states[a],vitBed.get(i).getChrom());
-//					PileupNode2 pNode = new PileupNode2(start+(a*10),(double)states[a],vitBed.get(i).getChrom());
-//					pile.add(pNode);
-//					
-//					
-//					//out.println(pNode.getChrom()+"\t"+pNode.getBase()+"\t"+(pNode.getBase()+10)+"\t"+"E"+(int)pNode.getScore());
-//				}
-//				PileupNode2 pNode = new PileupNode2(start+(((a)*10)-remainder),(double)states[a],vitBed.get(i).getChrom());
-//				pile.add(pNode);
-//				genomeAnnotation.addAll(new PileupToBedGraph(pile,10).getBedGraph());
-//				
-//				if(i%50 == 0 || i == vitBed.size()-1){
-//					log.println(i+" round viterbi done");
-//				}
-//			}
-//		}
-//		//out.close();
-//		if(printHMMRTracks){
-//			NFR.close();MONO.close();DI.close();TRI.close();
-//		}
-//		/**
-//		 * Report the final results as peaks, bedgraphs and summits, if desired
-//		 */
-//		PrintStream bedgraph=null;
+		}//for loop through chroms
+		if (bg){
+			bedgraph.close();
+		}
+		
+		
+		if (peaks){
+			counter=0;
+			
+			for (int i = 0;i < addBack.size();i++){
+				String chrom = addBack.get(i).getChrom();
+				int start = addBack.get(i).getStart();
+				int stop = addBack.get(i).getStop();
+				
+				pks.println(chrom+"\t"+start+"\t"+stop+"\t"+"HighCoveragePeak_"+counter+"\t.\t.\t0\t0\t255,0,0\t1\t"+
+				addBack.get(i).getLength()+"\t0\t-1\t-1\t-1");
+			}
+			
+			pks.close();
+			summits.close();
+		}
+		//old way
+		
+		/*
+		 * Print Genome-wide bedgraph of state annotations if desired
+		 */
 //		if (bg){
-//			 bedgraph = new PrintStream(output+".bedgraph");
-//		}
-//		PrintStream pks=null;
-//		PrintStream summits=null;
-//		if (peaks){
-//			 pks = new PrintStream(output+"_peaks.gappedPeak");
-//			 summits = new PrintStream(output+"_summits.bed");
-//		}
-//		HashMap<String,ArrayList<TagNode>> bdg = fc.getMappedBedgraph();
-////		HashMap<String,ArrayList<TagNode>> bdg = null;
+//			PrintStream bedgraph = new PrintStream(output+".bedgraph");
 //		
-//		fc=null;
-//		HashMap<String,ArrayList<TagNode>> hmmrBdg = bedGraphMath.toMap(genomeAnnotation);
-//		int counter=1;
-//		for (String chr : hmmrBdg.keySet()){
-//			ArrayList<TagNode> hmmr = hmmrBdg.get(chr);
-//			ArrayList<TagNode> signal = bdg.get(chr);
-//			if (signal != null) {
-//				Collections.sort(hmmr, TagNode.basepairComparator);
-//				
-//				Collections.sort(signal, TagNode.basepairComparator);
-//				
-//				int index = 0;
-//				for (int i = 0; i < hmmr.size(); i++) {
-//					TagNode temp = hmmr.get(i);
-//
-//					/**
-//					 * Execute the scoring commands if the state is a peak or if bedgraph scoring is on
-//					 */
-//					if ((int) temp.getScore2() == peak || BGScore) {
-//						boolean hasHadOverlap = false;
-//						ArrayList<TagNode> overlaps = new ArrayList<TagNode>();
-//						for (int a = index; a < signal.size(); a++) {
-//							if (SubtractBed.overlap(temp, signal.get(a))
-//									.hasHit()) {
-//								overlaps.add(signal.get(a));
-//								hasHadOverlap = true;
-//							} else {
-//								if (hasHadOverlap) {
-//									index = a;
-//									break;
-//								}
-//							}
-//
-//						}
-//						ScoreNode scores = bedGraphMath.set(temp, overlaps);
-//						double MAX = scores.getMax();
-//						double MEAN = scores.getMean();
-//						double MEDIAN = scores.getMedian();
-//						double ZSCORE = (scores.getMean() - genomeMean)
-//								/ genomeStd;
-//						double FOLDCHANGE = scores.getMean() / genomeMean;
-//						
-//						if (scoreSys.equals("ave")) {
-//							temp.setScore3(Double.toString(MEAN));
-//						} else if (scoreSys.equals("fc")) {
-//							temp.setScore3(Double.toString(FOLDCHANGE));
-//						} else if (scoreSys.equals("zscore")) {
-//							temp.setScore3(Double.toString(ZSCORE));
-//						} else if (scoreSys.equals("med")) {
-//							temp.setScore3(Double.toString(MEDIAN));
-//						} else if (scoreSys.equals("all")){
-//							String ANSWER = MAX+"_"+MEAN+"_"+MEDIAN+"_"+ZSCORE+"_"+FOLDCHANGE;
-//							temp.setScore3(ANSWER);
-//						} else {
-//							temp.setScore3(Double.toString(MAX));
-//						}
-//						if ((int) temp.getScore2() == peak) {
-//							temp = bedGraphMath.setSmooth(20, temp, overlaps);
-//							temp.setID("Peak_" + counter);
-//							if (i > 0) {
-//								temp.setUpstream(hmmr.get(i - 1));
-//							} else {
-//								temp.setUpstream(hmmr.get(i));
-//							}
-//							if (i < hmmr.size() - 1) {
-//								temp.setDownstream(hmmr.get(i + 1));
-//							} else {
-//								temp.setDownstream(hmmr.get(i));
-//							}
-//							counter++;
-//						}
-//
-//					}
-//					/**
-//					 * report the bedgraph, is desired
-//					 */
-//					if (bg) {
-//						if (!BGScore) {
-//							bedgraph.println(temp.toString2());
-//						} else {
-//							bedgraph.println(temp.toString_ScoredBdg());
-//						}
-//					}
-//					/**
-//					 * report the peaks and summits, if desired
-//					 */
-//					if (peaks && (int) temp.getScore2() == peak
-//							&& temp.getLength() >= minLength && 
-//							Double.parseDouble(temp.getScore3()) >= threshold) {
-//						if (temp.getSummit() != null) {
-//							summits.println(temp.toString_ScoredSummit());
-//						}
-//						pks.println(temp.toString_gappedPeak());
-//					}
-//
+//			for (int i = 0;i < genomeAnnotation.size();i++){
+//				String chr = genomeAnnotation.get(i).getChrom();
+//				int start = genomeAnnotation.get(i).getStart();
+//				int stop = genomeAnnotation.get(i).getStop();
+//				double score = genomeAnnotation.get(i).getScore2();
+//				if (BGScore){
+//					//GetSignal sig = new GetSignal(bigWig,chr,start,stop);10_13_18
+//					fc.set(genomeAnnotation.get(i));
+//					bedgraph.println(chr+"\t"+start+"\t"+stop+"\t"+"E"+(int)score+"\t"+fc.getMax());//10_13_18
+//					//bedgraph.println(chr+"\t"+start+"\t"+stop+"\t"+"E"+(int)score+"\t"+sig.getMax());10_13_18
+//				}
+//				else{
+//					bedgraph.println(chr+"\t"+start+"\t"+stop+"\t"+"E"+(int)score);
 //				}
 //			}
-//			
-//		}//for loop through chroms
-//		if (bg){
 //			bedgraph.close();
 //		}
 //		
+//		/*
+//		 * Print Peak file and summit file if desired
+//		 */
 //		
 //		if (peaks){
+//			PrintStream pks = new PrintStream(output+"_peaks.gappedPeak");
+//			@SuppressWarnings("resource")
+//			PrintStream summits = new PrintStream(output+"_summits.bed");
+//			pks.println("track name="+output+"_peaks.gappedPeak type=gappedPeak");
+//			int counter=0;
+//			for (int i = 1; i < genomeAnnotation.size()-1;i++){
+//				if (genomeAnnotation.get(i).getLength() >= minLength){
+//					String chr = genomeAnnotation.get(i).getChrom();
+//					int start = genomeAnnotation.get(i).getStart();
+//					int stop = genomeAnnotation.get(i).getStop();
+//					int score = (int)genomeAnnotation.get(i).getScore2();
+//					if (chr.equals(genomeAnnotation.get(i-1).getChrom()) && chr.equals(genomeAnnotation.get(i+1).getChrom())){
+//						if (score == peak){
+//							if(genomeAnnotation.get(i-1).getStop() == start && 
+//									genomeAnnotation.get(i+1).getStart() == stop){
+//								counter+=1;
+//								//GetSignal sig = new GetSignal(bigWig,chr,start-60,stop+60);10_13_18
+//								fc.set(new TagNode(chr,start-60,stop+60));//10_13_18
+//								//String value = Double.toString(sig.getMax());//10_13_18
+//								String value = Double.toString(fc.getMax());//10_13_18
+//								if (scoreSys.equals("ave")){
+//									//value = Double.toString(sig.getScore());//10_13_18
+//									value = Double.toString(fc.getScore());//10_13_18
+//								}
+//								else if (scoreSys.equals("fc")){
+//									//value = Double.toString(sig.getScore()/genomeMean);//10_13_18
+//									value = Double.toString(fc.getScore()/genomeMean);//10_13_18
+//								}
+//								else if (scoreSys.equals("zscore")){
+//									//value = Double.toString((sig.getScore()-genomeMean)/genomeStd);//10_13_18
+//									value = Double.toString((fc.getScore()-genomeMean)/genomeStd);//10_13_18
+//								}
+//								else if (scoreSys.equals("med")){
+//									//value = Double.toString(sig.getMedian());//10_13_18
+//									value = Double.toString(fc.getMedian());//10_13_18
+//								}
+//								else if (scoreSys.equals("all")){
+//									//value = Double.toString(sig.getScore())+"_"+
+//										//	Double.toString(sig.getMax())+"_"+Double.toString(sig.getMedian())+
+//										//	"_"+Double.toString(sig.getScore()/genomeMean)+"_"+
+//										//	Double.toString((sig.getScore()-genomeMean)/genomeStd);//10_13_18
+//									value = Double.toString(fc.getScore())+"_"+
+//											Double.toString(fc.getMax())+"_"+Double.toString(fc.getMedian())+
+//											"_"+Double.toString(fc.getScore()/genomeMean)+"_"+
+//											Double.toString((fc.getScore()-genomeMean)/genomeStd);//10_13_18
+//								}
+//								
+//								// Find summits
+//								//New Way 1/24/17 - Report Position where gaussian-smoothed max score is found
+//								//if (sig.getMaxPos() != null){//10_13_18
+//								if (fc.getMaxPos() != null){//10_13_18	
+//									//sig.findSmooth(20);//10_13_18
+//									fc.setSmooth(20, new TagNode(chr,start-60,stop+60));//10_13_18
+//									
+//									//TagNode best = sig.getMaxPos();//10_13_18
+//									TagNode best = fc.getMaxPos();//10_13_18
+//									summits.println(best.toString()+"\t"+"Peak_"+counter+"\t"+value);
+//								}
+//								//End report summits
+//								
+//								int peakStart=genomeAnnotation.get(i-1).getStart();
+//								int peakStop= genomeAnnotation.get(i+1).getStop();
+//								String middleValues = "3"+"\t"+
+//									"1"+","+genomeAnnotation.get(i).getLength()+","+
+//										"1"+"\t"+"0,"+
+//									(genomeAnnotation.get(i).getStart()-genomeAnnotation.get(i-1).getStart())+","+
+//										((genomeAnnotation.get(i+1).getStop()-genomeAnnotation.get(i-1).getStart())-1);
+//								/*
+//								if (genomeAnnotation.get(i-1).getScore2()== 0 && genomeAnnotation.get(i+1).getScore2()!=0){
+//									//non-standard peak, only downstream nuc
+//									peakStart = genomeAnnotation.get(i).getStart();
+//									peakStop = genomeAnnotation.get(i+1).getStop();
+//									middleValues = "2\t"+genomeAnnotation.get(i).getLength()+","+"1"+"\t"+"0"+","+((genomeAnnotation.get(i+1).getStop()-genomeAnnotation.get(i).getStart())-1);
+//								}
+//								else if (genomeAnnotation.get(i-1).getScore2()!= 0 && genomeAnnotation.get(i+1).getScore2()==0){
+//									//non-standard peak, only upstream nuc
+//									peakStart = genomeAnnotation.get(i-1).getStart();
+//									peakStop = genomeAnnotation.get(i).getStop();
+//									middleValues = "2\t"+"1"+","+genomeAnnotation.get(i).getLength()+"\t"+"0"+","+(genomeAnnotation.get(i).getStart()-genomeAnnotation.get(i-1).getStart());
+//
+//								}
+//								else if (genomeAnnotation.get(i-1).getScore2()== 0 && genomeAnnotation.get(i+1).getScore2()==0){
+//									//non-standard peak, no nucs
+//									peakStart = genomeAnnotation.get(i).getStart();
+//									peakStop = genomeAnnotation.get(i).getStop();
+//									middleValues = "1\t"+genomeAnnotation.get(i).getLength()+"\t"+"0";
+//								}
+//								*/
+//								pks.println(chr+"\t"+peakStart+"\t"+
+//									peakStop+"\t"+"Peak_"+counter+"\t"+".\t."+"\t"+genomeAnnotation.get(i).getStart()+"\t"+
+//										genomeAnnotation.get(i).getStop()+"\t"+"255,0,0"+"\t"+middleValues+"\t"+value+"\t"+"-1\t-1");
+//							}
+//						}
+//					}
+//				}
+//			}
+//			//add back the high coverage regions
 //			counter=0;
-//			
 //			for (int i = 0;i < addBack.size();i++){
 //				String chrom = addBack.get(i).getChrom();
 //				int start = addBack.get(i).getStart();
 //				int stop = addBack.get(i).getStop();
-//				
+//				//GetSignal sig = new GetSignal(bigWig,chrom,start,stop);//10_13_18
+//				fc.set(new TagNode(chrom,start,stop));//10_13_18
+//				//String value = Double.toString(sig.getMax());//10_13_18
+//				String value = Double.toString(fc.getMax());//10_13_18
+//				counter+=1;
+//				if (scoreSys.equals("ave")){
+//					//value = Double.toString(sig.getScore());//10_13_18
+//					value = Double.toString(fc.getScore());//10_13_18
+//				}
+//				else if (scoreSys.equals("med")){
+//					//value = Double.toString(sig.getMedian());//10_13_18
+//					value = Double.toString(fc.getMedian());//10_13_18
+//				}
+//				else if (scoreSys.equals("all")){
+//					//value = sig.getScore()+"_"+sig.getMax()+"_"+sig.getMedian();//10_13_18
+//					value = fc.getScore()+"_"+fc.getMax()+"_"+fc.getMedian();//10_13_18
+//				}
 //				pks.println(chrom+"\t"+start+"\t"+stop+"\t"+"HighCoveragePeak_"+counter+"\t.\t.\t0\t0\t255,0,0\t1\t"+
-//				addBack.get(i).getLength()+"\t0\t-1\t-1\t-1");
+//				addBack.get(i).getLength()+"\t0\t"+value+"\t-1\t-1");
 //			}
-//			
 //			pks.close();
-//			summits.close();
 //		}
-//		//old way
 //		
-//		/*
-//		 * Print Genome-wide bedgraph of state annotations if desired
-//		 */
-////		if (bg){
-////			PrintStream bedgraph = new PrintStream(output+".bedgraph");
-////		
-////			for (int i = 0;i < genomeAnnotation.size();i++){
-////				String chr = genomeAnnotation.get(i).getChrom();
-////				int start = genomeAnnotation.get(i).getStart();
-////				int stop = genomeAnnotation.get(i).getStop();
-////				double score = genomeAnnotation.get(i).getScore2();
-////				if (BGScore){
-////					//GetSignal sig = new GetSignal(bigWig,chr,start,stop);10_13_18
-////					fc.set(genomeAnnotation.get(i));
-////					bedgraph.println(chr+"\t"+start+"\t"+stop+"\t"+"E"+(int)score+"\t"+fc.getMax());//10_13_18
-////					//bedgraph.println(chr+"\t"+start+"\t"+stop+"\t"+"E"+(int)score+"\t"+sig.getMax());10_13_18
-////				}
-////				else{
-////					bedgraph.println(chr+"\t"+start+"\t"+stop+"\t"+"E"+(int)score);
-////				}
-////			}
-////			bedgraph.close();
-////		}
-////		
-////		/*
-////		 * Print Peak file and summit file if desired
-////		 */
-////		
-////		if (peaks){
-////			PrintStream pks = new PrintStream(output+"_peaks.gappedPeak");
-////			@SuppressWarnings("resource")
-////			PrintStream summits = new PrintStream(output+"_summits.bed");
-////			pks.println("track name="+output+"_peaks.gappedPeak type=gappedPeak");
-////			int counter=0;
-////			for (int i = 1; i < genomeAnnotation.size()-1;i++){
-////				if (genomeAnnotation.get(i).getLength() >= minLength){
-////					String chr = genomeAnnotation.get(i).getChrom();
-////					int start = genomeAnnotation.get(i).getStart();
-////					int stop = genomeAnnotation.get(i).getStop();
-////					int score = (int)genomeAnnotation.get(i).getScore2();
-////					if (chr.equals(genomeAnnotation.get(i-1).getChrom()) && chr.equals(genomeAnnotation.get(i+1).getChrom())){
-////						if (score == peak){
-////							if(genomeAnnotation.get(i-1).getStop() == start && 
-////									genomeAnnotation.get(i+1).getStart() == stop){
-////								counter+=1;
-////								//GetSignal sig = new GetSignal(bigWig,chr,start-60,stop+60);10_13_18
-////								fc.set(new TagNode(chr,start-60,stop+60));//10_13_18
-////								//String value = Double.toString(sig.getMax());//10_13_18
-////								String value = Double.toString(fc.getMax());//10_13_18
-////								if (scoreSys.equals("ave")){
-////									//value = Double.toString(sig.getScore());//10_13_18
-////									value = Double.toString(fc.getScore());//10_13_18
-////								}
-////								else if (scoreSys.equals("fc")){
-////									//value = Double.toString(sig.getScore()/genomeMean);//10_13_18
-////									value = Double.toString(fc.getScore()/genomeMean);//10_13_18
-////								}
-////								else if (scoreSys.equals("zscore")){
-////									//value = Double.toString((sig.getScore()-genomeMean)/genomeStd);//10_13_18
-////									value = Double.toString((fc.getScore()-genomeMean)/genomeStd);//10_13_18
-////								}
-////								else if (scoreSys.equals("med")){
-////									//value = Double.toString(sig.getMedian());//10_13_18
-////									value = Double.toString(fc.getMedian());//10_13_18
-////								}
-////								else if (scoreSys.equals("all")){
-////									//value = Double.toString(sig.getScore())+"_"+
-////										//	Double.toString(sig.getMax())+"_"+Double.toString(sig.getMedian())+
-////										//	"_"+Double.toString(sig.getScore()/genomeMean)+"_"+
-////										//	Double.toString((sig.getScore()-genomeMean)/genomeStd);//10_13_18
-////									value = Double.toString(fc.getScore())+"_"+
-////											Double.toString(fc.getMax())+"_"+Double.toString(fc.getMedian())+
-////											"_"+Double.toString(fc.getScore()/genomeMean)+"_"+
-////											Double.toString((fc.getScore()-genomeMean)/genomeStd);//10_13_18
-////								}
-////								
-////								// Find summits
-////								//New Way 1/24/17 - Report Position where gaussian-smoothed max score is found
-////								//if (sig.getMaxPos() != null){//10_13_18
-////								if (fc.getMaxPos() != null){//10_13_18	
-////									//sig.findSmooth(20);//10_13_18
-////									fc.setSmooth(20, new TagNode(chr,start-60,stop+60));//10_13_18
-////									
-////									//TagNode best = sig.getMaxPos();//10_13_18
-////									TagNode best = fc.getMaxPos();//10_13_18
-////									summits.println(best.toString()+"\t"+"Peak_"+counter+"\t"+value);
-////								}
-////								//End report summits
-////								
-////								int peakStart=genomeAnnotation.get(i-1).getStart();
-////								int peakStop= genomeAnnotation.get(i+1).getStop();
-////								String middleValues = "3"+"\t"+
-////									"1"+","+genomeAnnotation.get(i).getLength()+","+
-////										"1"+"\t"+"0,"+
-////									(genomeAnnotation.get(i).getStart()-genomeAnnotation.get(i-1).getStart())+","+
-////										((genomeAnnotation.get(i+1).getStop()-genomeAnnotation.get(i-1).getStart())-1);
-////								/*
-////								if (genomeAnnotation.get(i-1).getScore2()== 0 && genomeAnnotation.get(i+1).getScore2()!=0){
-////									//non-standard peak, only downstream nuc
-////									peakStart = genomeAnnotation.get(i).getStart();
-////									peakStop = genomeAnnotation.get(i+1).getStop();
-////									middleValues = "2\t"+genomeAnnotation.get(i).getLength()+","+"1"+"\t"+"0"+","+((genomeAnnotation.get(i+1).getStop()-genomeAnnotation.get(i).getStart())-1);
-////								}
-////								else if (genomeAnnotation.get(i-1).getScore2()!= 0 && genomeAnnotation.get(i+1).getScore2()==0){
-////									//non-standard peak, only upstream nuc
-////									peakStart = genomeAnnotation.get(i-1).getStart();
-////									peakStop = genomeAnnotation.get(i).getStop();
-////									middleValues = "2\t"+"1"+","+genomeAnnotation.get(i).getLength()+"\t"+"0"+","+(genomeAnnotation.get(i).getStart()-genomeAnnotation.get(i-1).getStart());
-////
-////								}
-////								else if (genomeAnnotation.get(i-1).getScore2()== 0 && genomeAnnotation.get(i+1).getScore2()==0){
-////									//non-standard peak, no nucs
-////									peakStart = genomeAnnotation.get(i).getStart();
-////									peakStop = genomeAnnotation.get(i).getStop();
-////									middleValues = "1\t"+genomeAnnotation.get(i).getLength()+"\t"+"0";
-////								}
-////								*/
-////								pks.println(chr+"\t"+peakStart+"\t"+
-////									peakStop+"\t"+"Peak_"+counter+"\t"+".\t."+"\t"+genomeAnnotation.get(i).getStart()+"\t"+
-////										genomeAnnotation.get(i).getStop()+"\t"+"255,0,0"+"\t"+middleValues+"\t"+value+"\t"+"-1\t-1");
-////							}
-////						}
-////					}
-////				}
-////			}
-////			//add back the high coverage regions
-////			counter=0;
-////			for (int i = 0;i < addBack.size();i++){
-////				String chrom = addBack.get(i).getChrom();
-////				int start = addBack.get(i).getStart();
-////				int stop = addBack.get(i).getStop();
-////				//GetSignal sig = new GetSignal(bigWig,chrom,start,stop);//10_13_18
-////				fc.set(new TagNode(chrom,start,stop));//10_13_18
-////				//String value = Double.toString(sig.getMax());//10_13_18
-////				String value = Double.toString(fc.getMax());//10_13_18
-////				counter+=1;
-////				if (scoreSys.equals("ave")){
-////					//value = Double.toString(sig.getScore());//10_13_18
-////					value = Double.toString(fc.getScore());//10_13_18
-////				}
-////				else if (scoreSys.equals("med")){
-////					//value = Double.toString(sig.getMedian());//10_13_18
-////					value = Double.toString(fc.getMedian());//10_13_18
-////				}
-////				else if (scoreSys.equals("all")){
-////					//value = sig.getScore()+"_"+sig.getMax()+"_"+sig.getMedian();//10_13_18
-////					value = fc.getScore()+"_"+fc.getMax()+"_"+fc.getMedian();//10_13_18
-////				}
-////				pks.println(chrom+"\t"+start+"\t"+stop+"\t"+"HighCoveragePeak_"+counter+"\t.\t.\t0\t0\t255,0,0\t1\t"+
-////				addBack.get(i).getLength()+"\t0\t"+value+"\t-1\t-1");
-////			}
-////			pks.close();
-////		}
-////		
-//		Long endTime = System.currentTimeMillis();
-//		Long total = (endTime - startTime) / 1000;
-//		log.println("Total time (seconds)= \t"+total);
-//		log.close();
-//	}//main
-//	
-//	
-//}
+		Long endTime = System.currentTimeMillis();
+		Long total = (endTime - startTime) / 1000;
+		log.println("Total time (seconds)= \t"+total);
+		log.close();
+	}//main
+	
+	
+}
 
